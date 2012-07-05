@@ -289,36 +289,21 @@ Terminal.debug = false;
  * Focused Terminal
  */
 
-Terminal.focus = null;
-
-Terminal.prototype.focus = function() {
-  if (Terminal.focus === this) return;
-  if (Terminal.focus) {
-    Terminal.focus.cursorState = 0;
-    Terminal.focus.refresh(Terminal.focus.y, Terminal.focus.y);
-    if (Terminal.focus.sendFocus) Terminal.focus.send('\x1b[O');
-  }
-  Terminal.focus = this;
+Terminal.prototype.focus = function(fromEvent) {
+  if (this.hasFocus) return;
   if (this.sendFocus) this.send('\x1b[I');
   this.showCursor();
+  this.hasFocus = true;
+  if (!fromEvent) this.element.focus();
 };
 
-/**
- * Global Events for key handling
- */
-
-Terminal.bindKeys = function() {
-  if (Terminal.focus) return;
-
-  // We could put an "if (Terminal.focus)" check
-  // here, but it shouldn't be necessary.
-  on(document, 'keydown', function(ev) {
-    return Terminal.focus.keyDown(ev);
-  }, true);
-
-  on(document, 'keypress', function(ev) {
-    return Terminal.focus.keyPress(ev);
-  }, true);
+Terminal.prototype.blur = function(fromEvent) {
+  if (!this.hasFocus) return;
+  this.cursorState = 0;
+  this.refresh(this.y, this.y);
+  if (this.sendFocus) this.send('\x1b[O');
+  this.hasFocus = false;
+  if (!fromEvent) this.element.blur();
 };
 
 /**
@@ -343,15 +328,28 @@ Terminal.prototype.open = function() {
   document.body.appendChild(this.element);
 
   this.refresh(0, this.rows - 1);
-
-  Terminal.bindKeys();
-  this.focus();
-
-  this.startBlink();
-
-  on(this.element, 'mousedown', function() {
-    self.focus();
+  
+  // Focus events.
+  this.element.tabIndex = 0;
+  on(this.element, 'focusin', function() {
+    self.focus(true);
   });
+  on(this.element, 'focusout', function() {
+    self.blur(true);
+  });
+  this.focus();
+  this.startBlink();
+  
+  // Key events.
+  on(this.element, 'keydown', function(ev) {
+    if (!self.hasFocus) return;
+    return self.keyDown(ev);
+  }, true);
+
+  on(this.element, 'keypress', function(ev) {
+    if (!self.hasFocus) return;
+    return self.keyPress(ev);
+  }, true);
 
   // This probably shouldn't work,
   // ... but it does. Firefox's paste
@@ -884,7 +882,7 @@ Terminal.prototype.refresh = function(start, end) {
 };
 
 Terminal.prototype.cursorBlink = function() {
-  if (Terminal.focus !== this) return;
+  if (!this.hasFocus) return;
   this.cursorState ^= 1;
   this.refresh(this.y, this.y);
 };
