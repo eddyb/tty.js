@@ -86,7 +86,6 @@ tty.open = function() {
 
   tty.socket.on('connect', function() {
     tty.reset();
-    new Window;
     tty.emit('connect');
   });
 
@@ -100,19 +99,32 @@ tty.open = function() {
     tty.terms[id]._destroy();
   });
 
+  // XXX Clean this up.
   tty.socket.on('sync', function(terms) {
     console.log('Attempting to sync...');
     console.log(terms);
+
     tty.reset();
-    terms.forEach(function(term) {
-      var emit = tty.socket.emit;
-      tty.socket.emit = function() {};
-      var win = new Window;
-      Object.keys(term).forEach(function(key) {
-        win.tabs[0][key] = term[key];
-      });
-      tty.socket.emit = emit;
+
+    var emit = tty.socket.emit;
+    tty.socket.emit = function() {};
+
+    Object.keys(terms).forEach(function(key) {
+      var data = terms[key]
+        , win = new Window
+        , tab = win.tabs[0];
+
+      delete tty.terms[tab.id];
+      tab.pty = data.pty;
+      tab.id = data.id;
+      tty.terms[data.id] = tab;
+      win.resize(data.cols, data.rows);
+      tab.setProcessName(data.process);
+      tty.emit('open tab', tab);
+      tab.emit('open');
     });
+
+    tty.socket.emit = emit;
   });
 
   // We would need to poll the os on the serverside
@@ -787,6 +799,17 @@ Tab.prototype._ignoreNext = function() {
  * Program-specific Features
  */
 
+Tab.scrollable = {
+  irssi: true,
+  man: true,
+  less: true,
+  htop: true,
+  top: true,
+  w3m: true,
+  lynx: true,
+  mocp: true
+};
+
 Tab.prototype._bindMouse = Tab.prototype.bindMouse;
 
 Tab.prototype.bindMouse = function() {
@@ -798,19 +821,9 @@ Tab.prototype.bindMouse = function() {
     ? 'mousewheel'
     : 'DOMMouseScroll';
 
-  var programs = {
-    irssi: true,
-    man: true,
-    less: true,
-    htop: true,
-    top: true,
-    w3m: true,
-    lynx: true
-  };
-
   on(self.element, wheelEvent, function(ev) {
     if (self.mouseEvents) return;
-    if (!programs[self.process]) return;
+    if (!Tab.scrollable[self.process]) return;
 
     if ((ev.type === 'mousewheel' && ev.wheelDeltaY > 0)
         || (ev.type === 'DOMMouseScroll' && ev.detail < 0)) {
